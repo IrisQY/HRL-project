@@ -135,6 +135,7 @@ class MountainCarEnv(gym.Env):
             self.viewer.close()
             self.viewer = None
 
+'''
 class CartpoleEnv(Environment):
     """
     Description:
@@ -203,9 +204,10 @@ class CartpoleEnv(Environment):
             self.state[2] += math.pi
 
         return np.array(self.state)
-
+'''
 
 ### test
+'''
 if __name__=='__main__':
     swing_up = False
     nsteps = 50
@@ -226,5 +228,5 @@ if __name__=='__main__':
         print("t=%d, action %d, x %.2f, x_dot %.2f, theta %.2f, theta_dot %.2f, done %r" 
             %(t, action, obs[0], obs[1], obs[2], obs[3], done))
         done = done or t==nsteps
-
+'''
 
