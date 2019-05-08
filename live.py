@@ -28,7 +28,8 @@ def live(agent, environment, num_episodes, max_timesteps,
         done = False
         while not done:
             action = agent.act(observation_history, action_history)
-            observation, done = environment.step(action)
+            environment.render()
+            observation, _, done = environment.step(action)
             action_history.append(action)
             observation_history.append((observation, done))
             t += 1
@@ -48,25 +49,25 @@ def live(agent, environment, num_episodes, max_timesteps,
 
 
 ### Example of usage
-from environment import CartpoleEnv
+from environment import MountainCarEnv
 from agents import RandomAgent
 from agents import DQNAgent
-from agents import cartpole_reward_function
-from feature import CartpoleIdentityFeature
+from agents import mountaincar_reward_function
+from feature import MountainCarIdentityFeature
 
 if __name__=='__main__':
     np.random.seed(0)
     torch.manual_seed(0)
 
-    env = CartpoleEnv(swing_up=False)
+    env = MountainCarEnv()
 
     # agent = RandomAgent(action_set=[0, 1, 2], 
     #     reward_function=functools.partial(cartpole_reward_function, reward_type='sparse'))
 
     agent = DQNAgent(
         action_set=[0, 1, 2],
-        reward_function=functools.partial(cartpole_reward_function, reward_type='height'),
-        feature_extractor=CartpoleIdentityFeature(),
+        reward_function=functools.partial(mountaincar_reward_function, reward_type='height'),
+        feature_extractor=MountainCarIdentityFeature(),
         hidden_dims=[50, 50],
         learning_rate=5e-4, 
         buffer_size=50000,

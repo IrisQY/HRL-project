@@ -12,7 +12,7 @@ class Buffer(object):
     A finite-memory buffer that rewrites oldest data when buffer is full.
     Stores tuples of the form (feature, action, reward, next feature). 
     """
-    def __init__(self, size=50000):
+    def __init__(self, size=200):
         self.size = size
         self.buffer = []
         self.next_idx = 0
@@ -266,8 +266,8 @@ class DQNAgent(Agent):
 
 
 
-def cartpole_reward_function(observation_history, action_history, 
-    reward_type='height', move_cost=0.05):
+def mountaincar_reward_function(observation_history, action_history,
+    reward_type='sparse'):
     """
     If the reward type is 'height,' agent gets a reward of 1 + cosine of the
     pole angle per step. Agent also gets a bonus reward of 1 if pole is upright
@@ -277,20 +277,13 @@ def cartpole_reward_function(observation_history, action_history,
     There is a small cost for applying force to the cart. 
     """
     state, terminated = observation_history[-1]
-    x, x_dot, theta, theta_dot = state
+    x, x_dot = state
     action = action_history[-1]
 
-    reward = - move_cost * np.abs(action - 1.)
-
     if not terminated:
-        up = math.cos(theta) > 0.95
-        still = np.abs(theta_dot) <= 1
-        centered = (np.abs(x) <= 1) and (np.abs(x_dot) <= 1)
-
         if reward_type == 'height':
-            reward += math.cos(theta) + 1 + (up and still)
-
+            pass
         elif reward_type == 'sparse':
-            reward += (up and still and centered)
+            reward = - 1
 
     return reward

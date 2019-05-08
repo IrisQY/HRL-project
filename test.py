@@ -8,11 +8,12 @@ import time
 import skvideo.io
 import functools
 
-from environment import CartpoleEnv
+# from environment import CartpoleEnv
+from environment import MountainCarEnv
 from agents import RandomAgent
 from agents import DQNAgent
-from agents import cartpole_reward_function
-from feature import CartpoleIdentityFeature
+from agents import mountaincar_reward_function
+from feature import MountainCarIdentityFeature
 
 def test(agent, environment, max_timesteps):
     """
