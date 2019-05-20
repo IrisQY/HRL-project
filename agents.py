@@ -1,6 +1,7 @@
 '''
 Agents for cartpole
 '''
+## Reference: https://colab.research.google.com/drive/1hOZeHjSdoel_-UoeLfg1aRC4uV_6gX1g#scrollTo=3NJTUn4nZViV
 import numpy as np
 import torch
 import torch.nn as nn
@@ -112,6 +113,34 @@ class MLP(nn.Module):
         x = self.layers[-1](x)
         return x
 
+class ModelWithPrior(nn.Module):
+  def __init__(self,model_network, prior_network, prior_scale = 1.):
+    super(ModelWithPrior, self).__init__()
+    self._prior_scale = prior_scale
+    self._model_network = model_network
+    self._prior_network = prior_network
+
+  def forward(self, inputs):
+    prior_output = self._prior_network(inputs).detach()
+    model_output = self._model_network(inputs)
+    return model_output + self._prior_scale * prior_output
+
+  def get_parameters(self):
+      return self._model_network.get_parameters() + self._prior_network.get_parameters()
+
+class EnsembleMLP(nn.Module):
+
+  def __init__(self, hidden_sizes, num_ensemble):
+    super(EnsembleMLP, self).__init__()
+    self._models = [MLP(hidden_sizes) for _ in range(num_ensemble)]
+    self._num_ensemble = num_ensemble
+
+  def forward(self, inputs):
+    outputs = [model(inputs) for model in self._models]
+    return torch.squeeze(torch.stack(outputs, dim = 1), dim=-1)
+
+  def get_parameters(self):
+      return [p for mlp in self._models for p in list(mlp.parameters()) if p.requires_grad == True]
 
 class DQNAgent(Agent):
     def __init__(self, action_set, reward_function, feature_extractor, 
@@ -161,7 +190,7 @@ class DQNAgent(Agent):
             self.test_mode = True
             self.model.load_state_dict(torch.load(test_model_path))
             self.model.eval()
-        
+
 
     def __str__(self):
         return "dqn"
@@ -264,7 +293,167 @@ class DQNAgent(Agent):
             path = './dqn.pt'
         torch.save(self.model.state_dict(), path)
 
+def logging(s):
+    print(s)
 
+class EnsembleDQNAgent(Agent):
+    def __init__(self, action_set, reward_function, feature_extractor,
+        hidden_dims=[50, 50], num_ensemble = 10, learning_rate=5e-4, buffer_size=50000,
+        batch_size=64, num_batches=100, starts_learning=5000, final_epsilon=0.02,
+        discount=0.99, target_freq=10, verbose=False, print_every=1,
+        test_model_path=None):
+
+        Agent.__init__(self, [0, 1, 2], reward_function)
+        self.feature_extractor = feature_extractor
+        self.feature_dim = self.feature_extractor.dimension
+        self.num_ensemble = num_ensemble
+
+        # build Q network
+        # we use a multilayer perceptron
+        dims = [self.feature_dim] + hidden_dims + [len(self.action_set)]
+        self.raw_model = EnsembleMLP(dims, self.num_ensemble)
+        self.prior = EnsembleMLP(dims, self.num_ensemble)
+        self.model = ModelWithPrior(self.raw_model,self.prior)
+
+        if test_model_path is None:
+            self.test_mode = False
+            self.learning_rate = learning_rate
+            self.buffer_size = buffer_size
+            self.batch_size = batch_size
+            self.num_batches = num_batches
+            self.starts_learning = starts_learning
+            self.epsilon = 1.0  # anneals starts_learning/(starts_learning + t)
+            self.final_epsilon = 0.02
+            self.timestep = 0
+            self.discount = discount
+
+            self.buffer = Buffer(self.buffer_size)
+
+            self.target_q = EnsembleMLP(dims,self.num_ensemble)
+            self.target_q.load_state_dict(self.raw_model.state_dict())
+            self.target_prior = EnsembleMLP(dims,self.num_ensemble)
+            self.target_prior.load_state_dict(self.prior.state_dict())
+            self.target_net = ModelWithPrior(self.target_q,self.target_prior)
+            self.target_net.eval()
+
+            self.target_freq = target_freq # target nn updated every target_freq episodes
+            self.num_episodes = 0
+
+            parameters = self.model.get_parameters()
+            self.optimizer = torch.optim.Adam(parameters, lr=self.learning_rate)
+
+            # for debugging purposes
+            self.verbose = verbose
+            self.running_loss = 1.
+            self.print_every = print_every
+
+        else:
+            self.test_mode = True
+            self.model.load_state_dict(torch.load(test_model_path))
+            self.model.eval()
+
+
+    def __str__(self):
+        return "ensembledqn"
+
+
+    def update_buffer(self, observation_history, action_history):
+        """
+        update buffer with data collected from current episode
+        """
+        reward_history = self.get_episode_reward(observation_history, action_history)
+        self.cummulative_reward += np.sum(reward_history)
+
+        tau = len(action_history)
+        feature_history = np.zeros((tau+1, self.feature_extractor.dimension))
+        for t in range(tau+1):
+            feature_history[t] = self.feature_extractor.get_feature(observation_history[:t+1])
+
+        for t in range(tau-1):
+            self.buffer.add(feature_history[t], action_history[t],
+                reward_history[t], feature_history[t+1])
+        done = observation_history[tau][1]
+        if done:
+            feat_next = None
+        else:
+            feat_next = feature_history[tau]
+        self.buffer.add(feature_history[tau-1], action_history[tau-1],
+            reward_history[tau-1], feat_next)
+
+
+    def learn_from_buffer(self):
+        """
+        update Q network by applying TD steps
+        """
+        if self.timestep < self.starts_learning:
+            pass
+
+        for _ in range(self.num_batches):
+            minibatch = self.buffer.sample(batch_size=self.batch_size)
+
+            feature_batch = torch.zeros(self.batch_size, self.feature_dim)
+            action_batch = torch.zeros(self.batch_size, self.num_ensemble, 1, dtype=torch.long)
+            reward_batch = torch.zeros(self.batch_size, self.num_ensemble, 1)
+            non_terminal_idxs = []
+            next_feature_batch = []
+            for i, d in enumerate(minibatch):
+                x, a, r, x_next = d
+                feature_batch[i] = torch.from_numpy(x)
+                action_batch[i,:,:] = torch.tensor(a, dtype=torch.long).expand(self.num_ensemble, 1)
+                reward_batch[i,:,:] = torch.tensor(r).expand(self.num_ensemble, 1)
+                if x_next is not None:
+                    non_terminal_idxs.append(i)
+                    next_feature_batch.append(x_next)
+
+            model_estimates = self.model(feature_batch).gather(2, action_batch)
+            future_values = torch.zeros(self.batch_size, self.num_ensemble)
+            if next_feature_batch != []:
+                next_feature_batch = torch.tensor(next_feature_batch, dtype=torch.float)
+                future_values[non_terminal_idxs,:] = self.target_net(next_feature_batch).max(2)[0].detach()
+            future_values = future_values.unsqueeze(-1)
+            target_values = reward_batch + self.discount * future_values
+
+            loss = nn.functional.mse_loss(model_estimates, target_values)
+
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+
+            self.running_loss = 0.99 * self.running_loss + 0.01 * loss.item()
+
+        self.epsilon = self.starts_learning / (self.starts_learning + self.timestep)
+        self.epsilon = max(self.final_epsilon, self.epsilon)
+
+        self.num_episodes += 1
+
+        if self.verbose and (self.num_episodes % self.print_every == 0):
+            print("ensembledqn ep %d, running loss %.2f" % (self.num_episodes, self.running_loss))
+
+        if self.num_episodes % self.target_freq == 0:
+            self.target_net.load_state_dict(self.model.state_dict())
+            if self.verbose:
+                print("ensembledqn ep %d update target network" % self.num_episodes)
+
+
+    def act(self, observation_history, action_history):
+        """ select action according to an epsilon greedy policy with respect to
+        the Q network """
+        feature = self.feature_extractor.get_feature(observation_history)
+        active_head = np.random.randint(self.num_ensemble)
+        with torch.no_grad():
+            action_values = self.model(torch.from_numpy(feature).float())[:, active_head].numpy()
+        if not self.test_mode:
+            action = self._epsilon_greedy_action(action_values, self.epsilon)
+            self.timestep += 1
+        else:
+            action = self._random_argmax(action_values)
+        return action
+
+
+    def save(self, path=None):
+        if path is None:
+            path = './ensembledqn.pt'
+        torch.save(self.model.state_dict(), path)
 
 def mountaincar_reward_function(observation_history, action_history,
     reward_type='sparse'):

@@ -28,19 +28,21 @@ def live(agent, environment, num_episodes, max_timesteps,
         done = False
         while not done:
             action = agent.act(observation_history, action_history)
-            environment.render()
+            # environment.render()
             observation, _, done = environment.step(action)
             action_history.append(action)
             observation_history.append((observation, done))
             t += 1
             done = done or (t == max_timesteps)
 
+        # environment.close()
         agent.update_buffer(observation_history, action_history)
         agent.learn_from_buffer()
 
         observation_data.append(observation_history)
         action_data.append(action_history)
         rewards.append(agent.cummulative_reward)
+
 
         if verbose and (episode % print_every == 0):
             print("ep %d,  reward %.2f" % (episode, agent.cummulative_reward))
@@ -52,6 +54,7 @@ def live(agent, environment, num_episodes, max_timesteps,
 from environment import MountainCarEnv
 from agents import RandomAgent
 from agents import DQNAgent
+from agents import EnsembleDQNAgent
 from agents import mountaincar_reward_function
 from feature import MountainCarIdentityFeature
 
@@ -64,11 +67,12 @@ if __name__=='__main__':
     # agent = RandomAgent(action_set=[0, 1, 2], 
     #     reward_function=functools.partial(cartpole_reward_function, reward_type='sparse'))
 
-    agent = DQNAgent(
+    agent = EnsembleDQNAgent(
         action_set=[0, 1, 2],
-        reward_function=functools.partial(mountaincar_reward_function, reward_type='height'),
+        reward_function=functools.partial(mountaincar_reward_function, reward_type='sparse'),
         feature_extractor=MountainCarIdentityFeature(),
         hidden_dims=[50, 50],
+        num_ensemble=10,
         learning_rate=5e-4, 
         buffer_size=50000,
         batch_size=64, 
