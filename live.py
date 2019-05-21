@@ -34,11 +34,9 @@ def live(agent, environment, num_episodes, max_timesteps,
             observation_history.append((observation, done))
             t += 1
             done = done or (t == max_timesteps)
-
         # environment.close()
         agent.update_buffer(observation_history, action_history)
         agent.learn_from_buffer()
-
         observation_data.append(observation_history)
         action_data.append(action_history)
         rewards.append(agent.cummulative_reward)
@@ -55,6 +53,7 @@ from environment import MountainCarEnv
 from agents import RandomAgent
 from agents import DQNAgent
 from agents import EnsembleDQNAgent
+from agents import BootDQNAgent
 from agents import mountaincar_reward_function
 from feature import MountainCarIdentityFeature
 
@@ -67,7 +66,7 @@ if __name__=='__main__':
     # agent = RandomAgent(action_set=[0, 1, 2], 
     #     reward_function=functools.partial(cartpole_reward_function, reward_type='sparse'))
 
-    agent = EnsembleDQNAgent(
+    agent = BootDQNAgent(
         action_set=[0, 1, 2],
         reward_function=functools.partial(mountaincar_reward_function, reward_type='sparse'),
         feature_extractor=MountainCarIdentityFeature(),
