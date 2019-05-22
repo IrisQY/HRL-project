@@ -679,8 +679,9 @@ def mountaincar_reward_function(observation_history, action_history,
 
     if not terminated:
         if reward_type == 'height':
-            pass
+            reward = - 1
         elif reward_type == 'sparse':
             reward = - 1
-
+    else:
+    	reward = 0
     return reward
