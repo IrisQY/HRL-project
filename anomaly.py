@@ -3,7 +3,6 @@ from environment import MountainCarEnv
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-import pickle
 from sklearn.cluster import KMeans
 from sklearn.neighbors import KNeighborsClassifier
 import pandas as pd
@@ -78,6 +77,8 @@ def k_means(anomaly_states, all_experiments, k = 6):
         cluster_centers[i][0] = cluster_centers[i][0] * stds[0] + means[0]
         cluster_centers[i][1] = cluster_centers[i][1] * stds[1] + means[1]
 
+    centers = pd.DataFrame({'position': cluster_centers[:,0], 'velocity': cluster_centers[:,1]})
+
     final = all_experiments[all_experiments['position'] >= 0.5]
     final['label'] = [k-1]*final.shape[0]
     rest = all_experiments[all_experiments['position'] < 0.5]
@@ -112,10 +113,51 @@ def k_means(anomaly_states, all_experiments, k = 6):
 
     plt.savefig(cluster_path + 'Clusters.png')
     df.to_csv(cluster_path + 'trial_clustering.csv', index = False)
+    centers.to_csv(cluster_path + 'centers.csv', index = False)
 
-    return cluster_centers
+    return cluster_centers, df
+
+def get_cluster_fn(n_clusters=6, load_path='./anomaly/clusters_', max_step = 200, num_episode = 10000, step = 80):
+    if load_path is not None:
+        cluster_centers = pd.read_csv(load_path+'centers.csv')
+        df = pd.read_csv(load_path+'trial_clustering.csv')
+    else:
+        anomaly_states, all_experiments = anomaly_detection(max_step, num_episode, step)
+        cluster_centers, df = k_means(anomaly_states, all_experiments, k = n_clusters)
+
+    cluster_centers = cluster_centers.values
+
+    clusters_one_hot = [np.zeros(n_clusters) for i in range(n_clusters)]
+    for i in range(len(clusters_one_hot)):
+        clusters_one_hot[i][i] = 1
+
+    to_label = df[df[labels] < n_clusters - 1]
+    data = to_label['position','velocity'].values
+    labels = to_label['labels'].values
+    neigh = KNeighborsClassifier(n_neighbors=1)
+    neigh.fit(data, labels)
+
+    def check_cluster(data_point, subgoal_index, original_point = None):
+        if data_point[0] >= 0.5:
+            cluster_index = n_clusters - 1
+        else:
+            cluster_index = neigh.predict(data_point)[0]
+        return (cluster_index == subgoal_index)
+
+
+    def identify_cluster(data_point, original_point = None):
+        if data_point[0] >= 0.5:
+            cluster_index = n_clusters - 1
+        else:
+            cluster_index = neigh.predict(data_point)[0]
+        cluster_one_hot = np.zeros(n_clusters)
+        cluster_one_hot[cluster_index] = 1
+        return cluster_one_hot
+
+    return identify_cluster, check_cluster, n_clusters, np.array(clusters_one_hot)
+
 
 
 if __name__=='__main__':
     anomaly_states, all_experiments = anomaly_detection()
-    clusters = k_means(anomaly_states, all_experiments)
+    clusters, df = k_means(anomaly_states, all_experiments)
