@@ -2,6 +2,7 @@
 Agents for MountainCar
 '''
 ## Reference: https://colab.research.google.com/drive/1hOZeHjSdoel_-UoeLfg1aRC4uV_6gX1g#scrollTo=3NJTUn4nZViV
+## Stick with one NN for one episode
 import numpy as np
 import torch
 import torch.nn as nn
