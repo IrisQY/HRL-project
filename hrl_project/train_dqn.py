@@ -17,12 +17,26 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 import pickle
+import time
 
+# ********************************************************************** #
+print_every = 500
+anomaly_dir_name = 'anomaly/' + time.strftime("%Y%m%d-%H%M%S")
+gaussian_dir_name = 'gaussian/' + time.strftime("%Y%m%d-%H%M%S")
+random_dir_name = 'random/' + time.strftime("%Y%m%d-%H%M%S")
+tf.flags.DEFINE_string('experiment_dir', anomaly_dir_name, 'Directory of experiment files.')
+tf.flags.DEFINE_string('logdir', 'experiment_logs/', 'Directory of logfile.')
+
+tf.flags.DEFINE_integer('num_iterations', 20000, 'number of iterations')
+tf.flags.DEFINE_integer('run_number', 1, 'Run number.')
+tf.flags.DEFINE_integer('num_train_episodes', 10, 'num_train_episodes')
+tf.flags.DEFINE_integer('num_eval_episodes', 10, 'num_eval_episodes')
+# ********************************************************************** #
+
+tf.flags.DEFINE_string('logfile', 'log.txt', 'Name of the logfile.')
 tf.flags.DEFINE_string('agent_type', 'h_dqn', 'RL agent type.')
 tf.flags.DEFINE_integer('n_clusters', 6, 'Number of clusters to form in unsupervised training.')
-tf.flags.DEFINE_string('logdir', 'experiment_logs/', 'Directory of logfile.')
-tf.flags.DEFINE_string('experiment_dir', 'anomaly', 'Directory of experiment files.')
-tf.flags.DEFINE_string('logfile', 'log.txt', 'Name of the logfile.')
+
 tf.flags.DEFINE_boolean('use_extra_travel_penalty', False, 'Whether or not to penalize meta-controller for sending agent to non-adjacent clusters.')
 tf.flags.DEFINE_boolean('use_extra_bit', False, 'Whether or not the meta-controller state contains an extra bit which indicates whether or not the agent is near the center of a particular cluster.')
 tf.flags.DEFINE_boolean('use_controller_dqn', False, 'Whether to use a controller dqn as opposed to normal dqn for the controller.')
@@ -30,7 +44,7 @@ tf.flags.DEFINE_boolean('use_intrinsic_timeout', True, 'Whether or not to intrin
 tf.flags.DEFINE_boolean('use_memory', False, 'Whether or not the meta-controller should use memory.')
 tf.flags.DEFINE_integer('memory_size', 5, 'Size of the LSTM memory.')
 tf.flags.DEFINE_boolean('pretrain_controller', False, 'Whether or not to pretrain the controller.')
-tf.flags.DEFINE_integer('run_number', 1, 'Run number.')
+
 
 env_name = ''
 
@@ -85,7 +99,7 @@ def make_agent(agent_type, env, num_clusters, use_extra_travel_penalty, use_extr
 
 def run(env_name='MountainCar-v0',
         agent_type='h_dqn',
-        num_iterations=100,
+        num_iterations=10000,
         num_train_episodes=10,
         num_eval_episodes=10,
         num_clusters=5,
@@ -99,7 +113,7 @@ def run(env_name='MountainCar-v0',
         use_memory=False,
         memory_size=5,
         pretrain_controller=False,
-        run_number=1):
+        run_number=10):
     """Function that executes RL training and evaluation.
 
     Args:
@@ -146,8 +160,13 @@ def run(env_name='MountainCar-v0',
         use_controller_dqn, use_intrinsic_timeout, use_memory, memory_size, pretrain_controller)
     print('Made agent!')
 
+    start_time = time.time()
+
     for it in range(num_iterations):
         # Run train episodes.
+        # print(20*'*')
+        # print(it)
+        # print(20*'*')
         for train_episode in range(num_train_episodes):
             # Reset the environment.
             state = env.reset()
@@ -170,7 +189,12 @@ def run(env_name='MountainCar-v0',
                 next_state, reward, terminal, _ = env.step(env_action)
                 next_state = np.expand_dims(next_state, axis=0)
 
-                agent.store(state, action, reward, next_state, terminal)
+                if it % print_every == 0:
+                    verbose =  True
+                else:
+                    verbose = False
+
+                agent.store(state, action, reward, next_state, terminal, verbose = verbose)
                 agent.update()
 
                 episode_reward += reward
@@ -222,7 +246,11 @@ def run(env_name='MountainCar-v0',
 
                 next_state = np.expand_dims(next_state, axis=0)
                 # env_test.render()
-                agent.store(state, action, reward, next_state, terminal, eval=True)
+                if it % print_every == 0:
+                    verbose =  True
+                else:
+                    verbose = False
+                agent.store(state, action, reward, next_state, terminal, eval=True, verbose = verbose)
                 if reward > 1:
                     reward = 1 # For sake of comparison.
 
@@ -241,12 +269,15 @@ def run(env_name='MountainCar-v0',
         # 	plt.imshow(heat_map, cmap='hot', interpolation='nearest')
         # 	plt.savefig(experiment_dir + '/heatmap_' + str(it) + '.png')
 
+    print('total time ' + str(time.time() - start_time))
+
 if __name__ == '__main__':
     run(agent_type=FLAGS.agent_type, logdir=FLAGS.logdir, experiment_dir=FLAGS.experiment_dir,
         logfile=FLAGS.logfile, num_clusters=FLAGS.n_clusters,
         use_extra_travel_penalty=FLAGS.use_extra_travel_penalty, use_extra_bit=FLAGS.use_extra_bit,
         use_controller_dqn=FLAGS.use_controller_dqn, use_intrinsic_timeout=FLAGS.use_intrinsic_timeout,
-        use_memory=FLAGS.use_memory, memory_size=FLAGS.memory_size,
-        pretrain_controller=FLAGS.pretrain_controller, run_number=FLAGS.run_number)
+        use_memory=FLAGS.use_memory, memory_size=FLAGS.memory_size, pretrain_controller=FLAGS.pretrain_controller, 
+        run_number=FLAGS.run_number, num_iterations = FLAGS.num_iterations, 
+        num_train_episodes = FLAGS.num_train_episodes, num_eval_episodes = FLAGS.num_eval_episodes)
 
 
