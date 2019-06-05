@@ -53,20 +53,38 @@ def meta_controller_state(state, original_state):
 
     return np.zeros()
 
+# subgoals = [\
+#             [- 1, 0],
+#             [-.7, 0],
+#             [-.3, 0],
+#             [  0, 0],
+#             [ .5, 0]
+#         ]
+
+# def check_subgoal(state, subgoal_index):
+
+#     target = subgoals[subgoal_index]
+
+#     return (state[0] - target[0]) < 0.01
+
 subgoals = [\
-            [- 1, 0],
-            [-.7, 0],
-            [-.3, 0],
-            [  0, 0],
+            [- .45, -.05],
+            [-.41, .05],
+            [-1.09, .02],
+            [  .32, .02],
+            [-1.03, -.03],
             [ .5, 0]
         ]
 
 def check_subgoal(state, subgoal_index):
 
     target = subgoals[subgoal_index]
-
-    return (state[0] - target[0]) < 0.01
-
+    complete = False
+    if (state[0] - target[0]) < 0.01 and (state[1] - target[1]) < 0.01:
+        complete = True
+    if state[0] >= .5:
+        complete = True
+    return complete
 
 def make_agent(agent_type, env, load = True):
     if agent_type == 'dqn':
@@ -211,7 +229,7 @@ def run(env_name='MountainCar-v0',
                 state = next_state
 
             eval_rewards.append(episode_reward)
-        if it % 10 == 0:
+        if it % 5 == 0:
             print("%d# Iteration: Mean Eval Score: %.2f" %(it, np.mean(eval_rewards))) 
             agent.save()
 
